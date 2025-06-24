@@ -32,20 +32,21 @@
 </head>
 <body class="bg-gray-900 text-white">
 
-    <div class="min-h-screen flex flex-col items-center justify-center p-4 bg-gradient-to-br from-gray-900 via-gray-800 to-black">
+    <div class="min-h-screen flex flex-col items-center p-4 bg-gradient-to-br from-gray-900 via-gray-800 to-black">
         
         <header class="text-center mb-8 fade-in">
             <h1 class="text-4xl md:text-5xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-purple-400 to-pink-600">
                 AI Code Deobfuscator
             </h1>
             <p class="text-gray-400 mt-2 max-w-2xl mx-auto">
-                Paste your obfuscated code below or upload a file. Our AI will analyze and clarify it, revealing the original, human-readable source code.
+                Paste your obfuscated code below or upload a file. Our AI will analyze, clarify, and summarize it.
             </p>
         </header>
 
         <main class="w-full max-w-4xl mx-auto">
             <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
                 
+                <!-- Input Card -->
                 <div class="glass-effect rounded-lg p-6 fade-in" style="animation-delay: 0.2s;">
                     <div class="flex justify-between items-center mb-4">
                         <h2 class="text-2xl font-semibold text-gray-200">Obfuscated Code</h2>
@@ -57,6 +58,7 @@
                     <textarea id="inputCode" class="w-full h-96 bg-gray-800 text-gray-300 border border-gray-700 rounded-md p-4 focus:ring-2 focus:ring-purple-500 focus:outline-none transition duration-300" placeholder="Paste code here or use the upload button..."></textarea>
                 </div>
 
+                <!-- Output Card -->
                 <div class="glass-effect rounded-lg p-6 fade-in" style="animation-delay: 0.4s;">
                     <div class="flex justify-between items-center mb-4">
                         <h2 class="text-2xl font-semibold text-gray-200">Deobfuscated Code</h2>
@@ -71,7 +73,7 @@
                     </div>
                     <div id="outputContainer" class="w-full h-96 bg-gray-800 border border-gray-700 rounded-md p-4 relative">
                         <pre class="w-full h-full overflow-auto"><code id="outputCode" class="!bg-transparent whitespace-pre-wrap text-gray-300 language-javascript"></code></pre>
-                        <div id="loadingIndicator" class="absolute inset-0 items-center justify-center bg-gray-800 bg-opacity-75 rounded-md hidden">
+                        <div id="loadingIndicator" class="absolute inset-0 flex items-center justify-center bg-gray-800 bg-opacity-75 rounded-md hidden">
                             <div class="text-center">
                                 <svg class="animate-spin h-8 w-8 text-purple-400 mx-auto" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
                                     <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
@@ -84,17 +86,27 @@
                 </div>
             </div>
 
-            <div class="text-center mt-8 fade-in" style="animation-delay: 0.6s;">
+            <!-- AI Summary Box -->
+            <div id="summaryContainer" class="w-full max-w-4xl mx-auto mt-6 glass-effect rounded-lg p-6 fade-in hidden">
+                <h2 class="text-2xl font-semibold text-gray-200 mb-3">AI Summary</h2>
+                <p id="summaryText" class="text-gray-300 leading-relaxed"></p>
+            </div>
+
+
+            <!-- Action Button -->
+            <div class="text-center mt-8 mb-4 fade-in" style="animation-delay: 0.6s;">
                 <button id="deobfuscateBtn" class="bg-gradient-to-r from-purple-500 to-pink-600 hover:from-purple-600 hover:to-pink-700 text-white font-bold py-3 px-8 rounded-full shadow-lg transform hover:scale-105 transition duration-300 ease-in-out">
-                    Deobfuscate
+                    Deobfuscate & Summarize
                 </button>
             </div>
+            <!-- Message Area -->
             <div id="messageArea" class="hidden mt-4 text-center p-3 bg-opacity-50 rounded-lg"></div>
         </main>
         
     </div>
 
     <script>
+        // --- DOM Element References ---
         const deobfuscateBtn = document.getElementById('deobfuscateBtn');
         const inputCode = document.getElementById('inputCode');
         const outputCode = document.getElementById('outputCode');
@@ -103,8 +115,11 @@
         const fileUpload = document.getElementById('fileUpload');
         const copyBtn = document.getElementById('copyBtn');
         const downloadBtn = document.getElementById('downloadBtn');
+        const summaryContainer = document.getElementById('summaryContainer');
+        const summaryText = document.getElementById('summaryText');
         let detectedLanguage = '';
 
+        // --- Event Listeners ---
         fileUpload.addEventListener('change', (event) => {
             const file = event.target.files[0];
             if (!file) return;
@@ -118,7 +133,6 @@
         copyBtn.addEventListener('click', () => {
             const codeToCopy = outputCode.textContent;
             if (codeToCopy) {
-                // Use the 'copy' command for broader compatibility
                 const textArea = document.createElement('textarea');
                 textArea.value = codeToCopy;
                 document.body.appendChild(textArea);
@@ -128,7 +142,6 @@
                     copyBtn.textContent = 'Copied!';
                     setTimeout(() => { copyBtn.textContent = 'Copy'; }, 2000);
                 } catch (err) {
-                    console.error('Fallback: Oops, unable to copy', err);
                     showMessage('Failed to copy code.', 'error');
                 }
                 document.body.removeChild(textArea);
@@ -142,17 +155,20 @@
                 return;
             }
 
+            // --- Reset UI ---
             loadingIndicator.style.display = 'flex';
             outputCode.textContent = '';
+            summaryContainer.classList.add('hidden');
+            summaryText.textContent = '';
             hideMessage();
             downloadBtn.disabled = true;
 
             try {
-                // Call our own backend API endpoint on Vercel
+                // --- Call Backend API ---
                 const response = await fetch('/api/deobfuscate', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ code: code }) // Send code in request body
+                    body: JSON.stringify({ code: code })
                 });
 
                 if (!response.ok) {
@@ -161,16 +177,21 @@
                 }
 
                 const result = await response.json();
-                let deobfuscatedCode = result.deobfuscatedCode;
-
-                outputCode.textContent = deobfuscatedCode;
                 
+                // --- Populate Code Output ---
+                const deobfuscatedCode = result.deobfuscatedCode || "/* No code returned */";
+                outputCode.textContent = deobfuscatedCode;
                 const highlighted = hljs.highlightAuto(deobfuscatedCode);
                 detectedLanguage = highlighted.language || 'plaintext';
                 outputCode.className = `!bg-transparent whitespace-pre-wrap text-gray-300 language-${detectedLanguage}`;
                 hljs.highlightElement(outputCode);
-
                 downloadBtn.disabled = false;
+                
+                // --- Populate Summary ---
+                if(result.summary) {
+                    summaryText.textContent = result.summary;
+                    summaryContainer.classList.remove('hidden');
+                }
 
             } catch (error) {
                 console.error("Error:", error);
@@ -180,20 +201,6 @@
                 loadingIndicator.style.display = 'none';
             }
         });
-
-        function showMessage(message, type = 'info') {
-            messageArea.textContent = message;
-            messageArea.className = `mt-4 text-center p-3 rounded-lg ${
-                type === 'error' 
-                ? 'bg-red-900 bg-opacity-50 text-red-300' 
-                : 'bg-blue-900 bg-opacity-50 text-blue-300'
-            }`;
-            messageArea.classList.remove('hidden');
-        }
-
-        function hideMessage() {
-            messageArea.classList.add('hidden');
-        }
 
         downloadBtn.addEventListener('click', () => {
             const codeToDownload = outputCode.textContent;
@@ -218,6 +225,21 @@
             document.body.removeChild(a);
             URL.revokeObjectURL(url);
         });
+
+        // --- Helper Functions ---
+        function showMessage(message, type = 'info') {
+            messageArea.textContent = message;
+            messageArea.className = `w-full max-w-4xl mx-auto mt-4 text-center p-3 rounded-lg ${
+                type === 'error' 
+                ? 'bg-red-900 bg-opacity-50 text-red-300' 
+                : 'bg-blue-900 bg-opacity-50 text-blue-300'
+            }`;
+            messageArea.classList.remove('hidden');
+        }
+
+        function hideMessage() {
+            messageArea.classList.add('hidden');
+        }
     </script>
 </body>
 </html>
