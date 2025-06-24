@@ -26,6 +26,10 @@
         textarea::placeholder {
             color: #9ca3af;
         }
+        /* Let the highlight.js theme control the code text color */
+        .hljs {
+           color: #abb2bf; /* Default text color from atom-one-dark theme */
+        }
     </style>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/atom-one-dark.min.css">
     <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
@@ -72,7 +76,7 @@
                         </div>
                     </div>
                     <div id="outputContainer" class="w-full h-96 bg-gray-800 border border-gray-700 rounded-md p-4 relative">
-                        <pre class="w-full h-full overflow-auto"><code id="outputCode" class="!bg-transparent whitespace-pre-wrap text-gray-300 language-javascript"></code></pre>
+                        <pre class="w-full h-full overflow-auto"><code id="outputCode" class="!bg-transparent whitespace-pre-wrap"></code></pre>
                         <div id="loadingIndicator" class="absolute inset-0 flex items-center justify-center bg-gray-800 bg-opacity-75 rounded-md hidden">
                             <div class="text-center">
                                 <svg class="animate-spin h-8 w-8 text-purple-400 mx-auto" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
@@ -157,7 +161,7 @@
 
             // --- Reset UI ---
             loadingIndicator.style.display = 'flex';
-            outputCode.textContent = '';
+            outputCode.innerHTML = ''; // Clear previous content
             summaryContainer.classList.add('hidden');
             summaryText.textContent = '';
             hideMessage();
@@ -180,11 +184,17 @@
                 
                 // --- Populate Code Output ---
                 const deobfuscatedCode = result.deobfuscatedCode || "/* No code returned */";
-                outputCode.textContent = deobfuscatedCode;
+                
+                // Let highlight.js detect language and generate highlighted HTML
                 const highlighted = hljs.highlightAuto(deobfuscatedCode);
                 detectedLanguage = highlighted.language || 'plaintext';
-                outputCode.className = `!bg-transparent whitespace-pre-wrap text-gray-300 language-${detectedLanguage}`;
-                hljs.highlightElement(outputCode);
+
+                // Directly insert the highlighted HTML into the code element
+                outputCode.innerHTML = highlighted.value;
+                
+                // Apply the necessary classes for styling
+                outputCode.className = `!bg-transparent whitespace-pre-wrap language-${detectedLanguage}`;
+                
                 downloadBtn.disabled = false;
                 
                 // --- Populate Summary ---
