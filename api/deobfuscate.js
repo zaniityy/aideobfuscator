@@ -2,41 +2,53 @@
 
 export default async function handler(request, response) {
     // 1. --- Security and Method Check ---
-    // Only allow POST requests
     if (request.method !== 'POST') {
-        response.status(405).json({ error: 'Method Not Allowed' });
-        return;
+        response.setHeader('Allow', ['POST']);
+        return response.status(405).json({ error: 'Method Not Allowed' });
     }
 
     // 2. --- Get API Key from Environment Variables ---
-    // This is the secure way to access your key on Vercel.
     const apiKey = process.env.API_KEY;
-
     if (!apiKey) {
-        response.status(500).json({ error: 'API key is not configured on the server.' });
-        return;
+        console.error("API_KEY environment variable not set.");
+        return response.status(500).json({ error: 'API key is not configured on the server.' });
     }
 
     try {
         // 3. --- Get Code from Request Body ---
         const { code } = request.body;
-        if (!code) {
-            response.status(400).json({ error: 'No code provided in the request body.' });
-            return;
+        if (!code || typeof code !== 'string' || code.trim() === '') {
+            return response.status(400).json({ error: 'No code provided in the request body.' });
         }
 
-        // 4. --- Prepare the Prompt for the Gemini API ---
+        // 4. --- Prepare the Prompt and JSON Schema for the Gemini API ---
         const prompt = `
-            Please deobfuscate the following code. Provide only the deobfuscated code as a direct response, without any additional explanations, introductions, or markdown formatting. Your entire response should be a single block of code.
+            You are an expert code analyst. Your task is to deobfuscate the provided code and provide a summary of its functionality.
             
-            Obfuscated Code:
+            Analyze the following obfuscated code:
             \`\`\`
             ${code}
             \`\`\`
+            
+            Your response must be a JSON object with two keys:
+            1.  "deobfuscatedCode": A string containing the fully deobfuscated, clean, and well-formatted code.
+            2.  "summary": A concise, one-paragraph string summarizing what the deobfuscated code does.
         `;
         
-        const chatHistory = [{ role: "user", parts: [{ text: prompt }] }];
-        const payload = { contents: chatHistory };
+        const payload = {
+            contents: [{ role: "user", parts: [{ text: prompt }] }],
+            generationConfig: {
+                responseMimeType: "application/json",
+                responseSchema: {
+                    type: "OBJECT",
+                    properties: {
+                        "deobfuscatedCode": { "type": "STRING" },
+                        "summary": { "type": "STRING" }
+                    },
+                    required: ["deobfuscatedCode", "summary"]
+                }
+            }
+        };
         const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`;
 
         // 5. --- Call the Gemini API ---
@@ -49,7 +61,6 @@ export default async function handler(request, response) {
         if (!geminiResponse.ok) {
             const errorData = await geminiResponse.json();
             console.error('Gemini API Error:', errorData);
-            // Forward a generic error to the client for security
             throw new Error(`The AI service failed to process the request.`);
         }
 
@@ -57,12 +68,11 @@ export default async function handler(request, response) {
 
         // 6. --- Process the Response and Send to Client ---
         if (result.candidates && result.candidates[0]?.content?.parts[0]?.text) {
-            let deobfuscatedCode = result.candidates[0].content.parts[0].text;
-            // Clean up markdown just in case it's there
-            deobfuscatedCode = deobfuscatedCode.replace(/^```(?:\w+\n)?/, '').replace(/```$/, '').trim();
+            // The response text is a JSON string, so we need to parse it.
+            const responseJson = JSON.parse(result.candidates[0].content.parts[0].text);
             
             // Send the successful response back to the frontend
-            response.status(200).json({ deobfuscatedCode: deobfuscatedCode });
+            return response.status(200).json(responseJson);
 
         } else {
              if (result.promptFeedback && result.promptFeedback.blockReason) {
@@ -73,7 +83,6 @@ export default async function handler(request, response) {
 
     } catch (error) {
         console.error("Server-side error:", error);
-        // Send a structured error message back to the client
-        response.status(500).json({ error: error.message || 'An internal server error occurred.' });
+        return response.status(500).json({ error: error.message || 'An internal server error occurred.' });
     }
 }
