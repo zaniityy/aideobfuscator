@@ -31,13 +31,15 @@ export default async function handler(request, response) {
             \`\`\`
             
             Your response must be a JSON object with two keys:
-            1.  "deobfuscatedCode": A string containing the fully deobfuscated, clean, and well-formatted code.
+            1.  "deobfuscatedCode": A string containing the fully deobfuscated, clean, and well-formatted code that is functionally identical to the original.
             2.  "summary": A concise, one-paragraph string summarizing what the deobfuscated code does.
         `;
         
         const payload = {
             contents: [{ role: "user", parts: [{ text: prompt }] }],
             generationConfig: {
+                // Set temperature to 0 for more deterministic and accurate results
+                temperature: 0, 
                 responseMimeType: "application/json",
                 responseSchema: {
                     type: "OBJECT",
@@ -68,10 +70,7 @@ export default async function handler(request, response) {
 
         // 6. --- Process the Response and Send to Client ---
         if (result.candidates && result.candidates[0]?.content?.parts[0]?.text) {
-            // The response text is a JSON string, so we need to parse it.
             const responseJson = JSON.parse(result.candidates[0].content.parts[0].text);
-            
-            // Send the successful response back to the frontend
             return response.status(200).json(responseJson);
 
         } else {
