@@ -2,33 +2,6 @@ export const config = {
     runtime: 'edge', // Use the Vercel Edge Runtime for streaming
 };
 
-// This helper function parses the stream from Gemini and extracts the text content.
-function createGeminiStreamParser() {
-    let buffer = '';
-    const decoder = new TextDecoder();
-    return new TransformStream({
-        transform(chunk, controller) {
-            buffer += decoder.decode(chunk);
-            // The Gemini stream sends data in a specific format. We need to find complete data chunks.
-            let boundary;
-            while ((boundary = buffer.indexOf('\\n')) !== -1) {
-                const line = buffer.substring(0, boundary).trim();
-                buffer = buffer.substring(boundary + 1);
-                if (line.startsWith('"text": "')) {
-                    try {
-                        // Extract the JSON content from the line
-                        const jsonString = `{${line}}`;
-                        const parsed = JSON.parse(jsonString);
-                        controller.enqueue(new TextEncoder().encode(parsed.text));
-                    } catch (e) {
-                        // Ignore lines that are not valid JSON
-                    }
-                }
-            }
-        },
-    });
-}
-
 export default async function handler(request) {
     if (request.method !== 'POST') {
         return new Response(JSON.stringify({ error: 'Method Not Allowed' }), { status: 405 });
@@ -77,10 +50,9 @@ export default async function handler(request) {
             throw new Error(`The AI service failed. Status: ${geminiResponse.status}`);
         }
 
-        // Pipe the response through our parser to extract the clean JSON stream
-        const stream = geminiResponse.body.pipeThrough(createGeminiStreamParser());
-
-        return new Response(stream, {
+        // The response from Gemini is already a stream. We just pass it through.
+        // The client will be responsible for reading the stream and parsing the final JSON.
+        return new Response(geminiResponse.body, {
             status: 200,
             headers: { 'Content-Type': 'application/json' },
         });
