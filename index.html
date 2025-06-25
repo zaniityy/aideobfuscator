@@ -161,14 +161,14 @@
 
             // --- Reset UI ---
             loadingIndicator.style.display = 'flex';
-            outputCode.innerHTML = ''; // Clear previous content
+            outputCode.innerHTML = '';
             summaryContainer.classList.add('hidden');
             summaryText.textContent = '';
             hideMessage();
             downloadBtn.disabled = true;
 
             try {
-                // --- Call Backend API ---
+                // --- Call Backend API for a Stream ---
                 const response = await fetch('/api/deobfuscate', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
@@ -176,53 +176,58 @@
                 });
 
                 if (!response.ok) {
-                    const errorData = await response.json();
-                    throw new Error(errorData.error || 'An unknown error occurred.');
+                    let errorMsg = `HTTP error! Status: ${response.status}`;
+                    try {
+                        const errorData = await response.json();
+                        errorMsg = errorData.error || errorMsg;
+                    } catch (e) { /* Ignore if body isn't JSON */ }
+                    throw new Error(errorMsg);
                 }
 
-                const result = await response.json();
+                // Read the entire streamed response into a single string
+                const reader = response.body.getReader();
+                const decoder = new TextDecoder();
+                let accumulatedJson = '';
+                while (true) {
+                    const { value, done } = await reader.read();
+                    if (done) break;
+                    accumulatedJson += decoder.decode(value);
+                }
                 
-                // --- Populate Code Output ---
+                // --- Process the complete response ---
+                const result = JSON.parse(accumulatedJson);
                 const deobfuscatedCode = result.deobfuscatedCode || "/* No code returned */";
                 const originalCode = inputCode.value;
 
-                // Let highlight.js detect language for both input and output
+                // --- Language Detection ---
                 const outputHighlight = hljs.highlightAuto(deobfuscatedCode);
                 const inputHighlight = hljs.highlightAuto(originalCode);
-                
                 let finalHighlight = outputHighlight; // Default to output highlight
-
-                // Compare relevance scores to determine the more likely language
-                // and as a fallback, if the output is generic but input is specific, prefer input.
                 const useInputLanguage = (inputHighlight.relevance > outputHighlight.relevance && inputHighlight.language) || 
                                          (outputHighlight.language === 'plaintext' && inputHighlight.language && inputHighlight.language !== 'plaintext');
-
                 if (useInputLanguage) {
                     detectedLanguage = inputHighlight.language;
-                    // Re-highlight the output code using the language detected from the input code
                     finalHighlight = hljs.highlight(deobfuscatedCode, { language: detectedLanguage, ignoreIllegals: true });
                 } else {
                     detectedLanguage = outputHighlight.language || 'plaintext';
                 }
 
-                // Directly insert the highlighted HTML into the code element
+                // --- Populate UI ---
                 outputCode.innerHTML = finalHighlight.value;
-                
-                // Apply the necessary classes for styling
                 outputCode.className = `!bg-transparent whitespace-pre-wrap language-${detectedLanguage}`;
                 
-                downloadBtn.disabled = false;
-                
-                // --- Populate Summary ---
-                if(result.summary) {
+                if (result.summary) {
                     summaryText.textContent = result.summary;
                     summaryContainer.classList.remove('hidden');
                 }
+                
+                downloadBtn.disabled = false;
 
             } catch (error) {
                 console.error("Error:", error);
                 showMessage(error.message, 'error');
                 outputCode.textContent = "Failed to deobfuscate code.";
+                summaryContainer.classList.add('hidden');
             } finally {
                 loadingIndicator.style.display = 'none';
             }
