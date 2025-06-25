@@ -184,18 +184,60 @@
                     throw new Error(errorMsg);
                 }
 
-                // Read the entire streamed response into a single string
+                // --- Process the Stream from the AI ---
                 const reader = response.body.getReader();
                 const decoder = new TextDecoder();
-                let accumulatedJson = '';
+                let buffer = '';
+                let fullJsonResponse = '';
+
                 while (true) {
-                    const { value, done } = await reader.read();
-                    if (done) break;
-                    accumulatedJson += decoder.decode(value);
+                    const { done, value } = await reader.read();
+                    if (done) {
+                        // Process any remaining data in the buffer when the stream is finished.
+                        if (buffer.trim().startsWith('data:')) {
+                            const jsonString = buffer.trim().substring(5).trim();
+                            if (jsonString) {
+                                try {
+                                    const parsed = JSON.parse(jsonString);
+                                    const text = parsed.candidates?.[0]?.content?.parts?.[0]?.text;
+                                    if (text) {
+                                        fullJsonResponse += text;
+                                    }
+                                } catch (e) {
+                                    console.warn('Failed to parse final JSON chunk from stream:', jsonString);
+                                }
+                            }
+                        }
+                        break; // Exit the loop
+                    }
+
+                    buffer += decoder.decode(value, { stream: true });
+                    const parts = buffer.split('\n');
+                    buffer = parts.pop() || ''; // The last part might be incomplete.
+
+                    for (const part of parts) {
+                        const trimmedPart = part.trim();
+                        if (trimmedPart.startsWith('data:')) {
+                            const jsonString = trimmedPart.substring(5).trim();
+                            if (jsonString) {
+                                try {
+                                    const parsed = JSON.parse(jsonString);
+                                    const text = parsed.candidates?.[0]?.content?.parts?.[0]?.text;
+                                    if (text) {
+                                        fullJsonResponse += text;
+                                    }
+                                } catch (e) {
+                                    // This can happen if a JSON object is split across chunks.
+                                    // The logic relies on the buffer to handle this.
+                                    console.warn('Failed to parse JSON chunk from stream:', jsonString);
+                                }
+                            }
+                        }
+                    }
                 }
-                
-                // --- Process the complete response ---
-                const result = JSON.parse(accumulatedJson);
+
+                // Now, fullJsonResponse should contain the complete JSON string.
+                const result = JSON.parse(fullJsonResponse);
                 const deobfuscatedCode = result.deobfuscatedCode || "/* No code returned */";
                 const originalCode = inputCode.value;
 
